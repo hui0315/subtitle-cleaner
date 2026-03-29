@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>字幕清理工具</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f4f0;
+    color: #1a1a18;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 500;
+    color: #1a1a18;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 12.5px;
+    color: #888780;
+  }
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 10px 12px;
+    border: 0.5px solid #c8c7c0;
+    border-radius: 8px;
+    background: #eeecea;
+    color: #1a1a18;
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  textarea:focus { border-color: #888780; background: #fff; }
+  textarea.out { background: #fff; }
+
+  button.primary {
+    height: 36px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 8px;
+    background: #1a1a18;
+    color: #f5f4f0;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  button.primary:hover { opacity: .82; }
+
+  button.secondary {
+    height: 36px;
+    padding: 0 14px;
+    border: 0.5px solid #c8c7c0;
+    border-radius: 8px;
+    background: transparent;
+    color: #1a1a18;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  button.secondary:hover { background: #eeecea; }
+
+  .label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #888780;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-weight: 500;
+  }
+
+  .fmt-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 99px;
+    border: 0.5px solid #c8c7c0;
+    color: #888780;
+  }
+
+  .prompt-box {
+    border: 0.5px solid #dddcda;
+    border-radius: 8px;
+    background: #eeecea;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #888780;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .prompt-text {
+    font-family: "Menlo", "Consolas", monospace;
+    font-size: 12px;
+    color: #1a1a18;
+    flex: 1;
+  }
+
+  .upload-zone {
+    border: 1px dashed #c8c7c0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    font-size: 12.5px;
+    color: #888780;
+    cursor: pointer;
+    transition: background .15s;
+    margin-bottom: 6px;
+  }
+  .upload-zone:hover { background: #eeecea; }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: #888780; margin-top: 6px; }
+
+  .copied-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #1a1a18;
+    color: #f5f4f0;
+    font-size: 12.5px;
+    padding: 7px 16px;
+    border-radius: 99px;
+    opacity: 0;
+    transition: opacity .2s, transform .2s;
+    pointer-events: none;
+  }
+  .copied-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div>
+    <h1>字幕清理工具</h1>
+    <div class="subtitle">支援 SRT / VTT / 時間戳文字格式，去除時間軸、合併斷句</div>
+  </div>
+
+  <!-- Input -->
+  <div>
+    <div class="label">原始字幕</div>
+    <div class="upload-zone" onclick="document.getElementById('f').click()">
+      點此上傳檔案（.srt .vtt .txt），或直接貼入下方
+      <input type="file" id="f" style="display:none" accept=".srt,.vtt,.txt" onchange="loadFile(this)">
+    </div>
+    <textarea id="raw" rows="10" placeholder="貼入任何格式字幕，例如：
+
+0:00
+Welcome to Lesson 2.
+0:01
+In this lesson you will learn embeddings.
+
+或 SRT / VTT 格式皆可。"></textarea>
+  </div>
+
+  <!-- Controls -->
+  <div class="row">
+    <button class="primary" onclick="doClean()">清理字幕 →</button>
+    <span id="fmt-tag" class="fmt-tag" style="display:none"></span>
+    <span id="stats" class="badge" style="display:none"></span>
+  </div>
+
+  <!-- Output -->
+  <div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+      <div class="label">整理後 Script</div>
+      <button class="secondary" onclick="copyOut()">複製</button>
+    </div>
+    <textarea id="out" class="out" rows="10" readonly placeholder="整理結果會出現在這裡..."></textarea>
+  </div>
+
+  <!-- Prompt template -->
+  <div>
+    <div class="label" style="margin-bottom:6px;">翻譯提示詞模板</div>
+    <div class="prompt-box">
+      <span class="prompt-text" id="prompt-text">原句翻譯成台灣中文，不整理。</span>
+      <button class="secondary" onclick="copyPrompt()">複製提示詞</button>
+    </div>
+    <div class="hint">複製整理後的 script，搭配上方提示詞，貼到 ChatGPT / Claude 即可翻譯。</div>
+  </div>
+
+</div>
+
+<div class="copied-toast" id="toast"></div>
+
+<script>
+const TS_RE = /^(\d{1,2}:)?\d{1,2}:\d{2}(\.\d+)?$/;
+const SRT_ARROW = /-->/;
+const SRT_IDX = /^\d+$/;
+
+function detect(text) {
+  if (text.trimStart().startsWith('WEBVTT')) return 'VTT';
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.some(l => SRT_ARROW.test(l))) return 'SRT';
+  if (lines.some(l => TS_RE.test(l))) return '時間戳文字';
+  return '純文字';
+}
+
+function parse(text, fmt) {
+  if (fmt === 'SRT') {
+    return text.trim().split(/\n\s*\n/).flatMap(b =>
+      b.split('\n').map(l => l.trim()).filter(l => l && !SRT_IDX.test(l) && !SRT_ARROW.test(l))
+    );
+  }
+  if (fmt === 'VTT') {
+    const out = []; let cur = [];
+    for (const line of text.split('\n')) {
+      const l = line.trim();
+      if (SRT_ARROW.test(l) || l === 'WEBVTT' || /^NOTE/.test(l)) {
+        if (cur.length) { out.push(...cur); cur = []; }
+      } else if (l) cur.push(l);
+    }
+    if (cur.length) out.push(...cur);
+    return out;
+  }
+  if (fmt === '時間戳文字') {
+    return text.split('\n').map(l => l.trim()).filter(l => l && !TS_RE.test(l));
+  }
+  return text.split('\n').map(l => l.trim()).filter(Boolean);
+}
+
+function merge(lines) {
+  let out = '';
+  for (const l of lines) {
+    if (!out) { out = l; continue; }
+    out += ' ' + l;
+  }
+  return out.trim();
+}
+
+function doClean() {
+  const raw = document.getElementById('raw').value.trim();
+  if (!raw) return;
+  const fmt = detect(raw);
+  const lines = parse(raw, fmt);
+  const result = merge(lines);
+
+  document.getElementById('out').value = result;
+
+  const ftag = document.getElementById('fmt-tag');
+  ftag.style.display = 'inline';
+  ftag.textContent = fmt;
+
+  const wc = result.split(/\s+/).filter(Boolean).length;
+  const tc = Math.ceil(result.length / 4);
+  const stats = document.getElementById('stats');
+  stats.style.display = 'inline';
+  stats.textContent = `~${wc} 詞  ~${tc} tokens`;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function copyOut() {
+  const v = document.getElementById('out').value;
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => toast('已複製 script'));
+}
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('prompt-text').textContent)
+    .then(() => toast('已複製提示詞'));
+}
+
+function loadFile(input) {
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('raw').value = e.target.result; };
+  r.readAsText(f, 'utf-8');
+}
+</script>
+</body>
+</html>
